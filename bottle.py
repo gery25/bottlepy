@@ -134,6 +134,12 @@ def _stderr(*args):
         pass  # Some environments do not allow printing (mod_wsgi)
 
 
+def _trace(*args):
+    """Print a short execution trace when Bottle debug mode is enabled."""
+    if globals().get('DEBUG', False):
+        print('[BOTTLE TRACE]', *args)
+
+
 # A bug in functools causes it to break if the wrapper is an instance method
 def update_wrapper(wrapper, wrapped, *a, **ka):
     try:
@@ -328,6 +334,7 @@ class Router:
 
     def add(self, rule, method, target, name=None):
         """ Add a new rule or replace the target for an existing rule. """
+        _trace('router.add', method, rule, 'name=%r' % name)
         anons = []  # Generated names of anonymous wildcards
         keys = []  # Names of keys
         pattern = ''  # Regular expression pattern with named groups
@@ -431,18 +438,21 @@ class Router:
         """ Return a (target, url_args) tuple or raise HTTPError(400/404/405). """
         verb = environ['REQUEST_METHOD'].upper()
         path = environ['PATH_INFO'] or '/'
+        _trace('router.match', verb, path)
 
         methods = ('PROXY', 'HEAD', 'GET', 'ANY') if verb == 'HEAD' else ('PROXY', verb, 'ANY')
 
         for method in methods:
             if method in self.static and path in self.static[method]:
                 target, getargs = self.static[method][path]
+                _trace('router.match -> static', method, path)
                 return target, getargs(path) if getargs else {}
             elif method in self.dyna_regexes:
                 for combined, rules in self.dyna_regexes[method]:
                     match = combined(path)
                     if match:
                         target, getargs = rules[match.lastindex - 1]
+                        _trace('router.match -> dynamic', method, path)
                         return target, getargs(path) if getargs else {}
 
         # No matching route found. Collect alternative methods for 405 response
@@ -840,6 +850,8 @@ class Bottle:
     def add_route(self, route):
         """ Add a route object, but do not change the :data:`Route.app`
             attribute."""
+        _trace('app.add_route', route.method, route.rule,
+               'callback=%s' % getattr(route.callback, '__name__', '?'))
         self.routes.append(route)
         self.router.add(route.rule, route.method, route, name=route.name)
         if DEBUG: route.prepare()
@@ -891,6 +903,7 @@ class Bottle:
                                   plugins=plugins,
                                   skiplist=skiplist, **config)
                     self.add_route(route)
+                    _trace('app.route registered', verb, rule)
             return callback
 
         return decorator(callback) if callback else decorator
@@ -943,6 +956,7 @@ class Bottle:
     def _handle(self, environ):
         path = environ['bottle.raw_path'] = environ['PATH_INFO']
         environ['PATH_INFO'] = _wsgi_recode(path)
+        _trace('request.start', environ.get('REQUEST_METHOD'), path)
 
         environ['bottle.app'] = self
         request.bind(environ)
@@ -956,6 +970,7 @@ class Bottle:
                 environ['route.handle'] = route
                 environ['bottle.route'] = route
                 environ['route.url_args'] = args
+                _trace('request.call', route.rule, 'args=%r' % args)
                 out = route.call(**args)
             except HTTPResponse as E:
                 out = E
@@ -987,6 +1002,7 @@ class Bottle:
             Support: False, bytes/bytearray, str, dict, HTTPResponse, HTTPError,
             file-like, iterable of bytes/bytearray or str instances.
         """
+        _trace('response.cast', type(out).__name__)
 
         # Empty output is done here
         if not out:
@@ -4378,6 +4394,7 @@ def template(*args, **kwargs):
     or directly (as keyword arguments).
     """
     tpl = args[0] if args else None
+    _trace('template.render', repr(tpl))
     for dictarg in args[1:]:
         kwargs.update(dictarg)
     adapter = kwargs.pop('template_adapter', SimpleTemplate)

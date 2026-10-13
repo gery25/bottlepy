@@ -63,3 +63,8 @@ include = [
 [tool.pytest.ini_options]
 addopts = "-ra"
 testpaths = [ "test" ]
+
+[tool.uv.workspace]
+members = [
+    "proves",
+]
